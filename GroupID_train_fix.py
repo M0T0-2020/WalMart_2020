@@ -16,6 +16,47 @@ def _create_batch_data(index, data, calendar):
         x = torch.cat((x,tmp_x.unsqueeze(0)), dim=0)
     return x
 
+class Loss_func_item_id_store_id_(nn.Module):
+    def __init__(self, df, cols):
+        super(Loss_func_item_id_store_id_, self).__init__()
+        last_d = int(cols[-1].replace('d_', ''))
+        d_cols = df.columns[df.columns.str.startswith('d_')]
+        train_d_cols = last_d-28*2
+        self.train_d_cols = d_cols[:train_d_cols]
+        test_d_cols = last_d-28
+        self.test_d_cols = d_cols[:test_d_cols]
+        self._create_denominator(df)
+        
+    def _create_denominator(self, df):
+        
+        train_value = df[self.train_d_cols]
+        train_value = train_value.values
+        train_value = train_value[:,1:]-train_value[:,:-1]
+        train_value = train_value**2
+        train_value = train_value.mean(1)
+        train_value[train_value==0]=1
+        self.train_value = torch.FloatTensor(train_value)
+        
+        test_value = df[self.test_d_cols]
+        test_value = test_value.values
+        test_value = test_value[:,1:]-test_value[:,:-1]
+        test_value = test_value**2
+        test_value = test_value.mean(1)
+        test_value[test_value==0]=1
+        self.test_value = torch.FloatTensor(test_value)
+        
+    def forward(self, preds, true, idx, train):
+        loss = (preds-true)**2
+        loss = loss.mean(1)
+        loss = loss.squeeze()
+        if train:
+            loss = loss/self.train_value[idx]
+        else:
+            loss = loss/self.test_value[idx]
+        loss = torch.sqrt(loss)
+        loss = loss.mean()
+        return loss
+
 class Loss_func_groupid(nn.Module):
     def __init__(self, df, cols, index_index, group_id):
         super(Loss_func_item_id_state_id_, self).__init__()
@@ -207,10 +248,11 @@ class TrainModel_groupId():
         eta_min = 1e-3
         t_max = 10
         model = model.to(DEVICE)
-        criterion = Loss_func_groupid(cols=cols, df=df, index_index=index_index, self.group_id)
+        criterion_2 = Loss_func_groupid(cols=cols, df=df, index_index=index_index, self.group_id)
+        criterion_1 = Loss_func_item_id_store_id_(df=df, cols=cols)
         optimizer = RAdam(params=model.parameters(), lr=lr)
         scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=t_max, eta_min=eta_min)
-        return model, criterion, optimizer, scheduler
+        return model, criterion_1, criterion_2, optimizer, scheduler
 
     def train_model_gruopId(self, model, data, calendar):
         self.df['index'] = self.df.index
@@ -227,7 +269,7 @@ class TrainModel_groupId():
         data_set=indicate_index(index_df)
         data_loader = torch.utils.data.DataLoader(data_set, batch_size = 33, shuffle = True)
         
-        model, criterion, optimizer, scheduler = self.prepare_training_groupId(model, self.df, self.cols, index_index)
+        model, criterion_, criterion_g, optimizer, scheduler = self.prepare_training_groupId(model, self.df, self.cols, index_index)
         
         num_epochs = 40
         best_epoch = -1
@@ -257,15 +299,18 @@ class TrainModel_groupId():
                 
                 preds = model(x_batch)
                 
-                loss = criterion(preds.cpu(), y_batch.cpu(), idx, length, train=True)
+                loss_ = criterion_(preds.cpu(), y_batch.cpu(), index, train=True)
+                loss_g = criterion(preds.cpu(), y_batch.cpu(), idx, length, train=True)
+                loss = 0.45*loss_+0.55*loss_g
+                del loss_; gc.collect()
                 loss = loss.to(DEVICE)
                 
                 loss.backward()
                 optimizer.step()
                 scheduler.step()
 
-                avg_loss += loss.item() / len(data_loader)
-                del loss; gc.collect()
+                avg_loss += loss_g.item() / len(data_loader)
+                del loss_g,loss; gc.collect()
             
             model.eval()
             avg_val_loss = 0.
@@ -273,7 +318,7 @@ class TrainModel_groupId():
             for idx in data_loader:
                 index = sum(index_df.iloc[idx]['index'].values.tolist(),[])
                 length = index_df.iloc[idx]['length'].values.tolist()
-                
+
                 x_batch = _create_batch_data(index, data, calendar)
                 
                 x_batch, y_batch = split_X_y(x_batch)
@@ -281,10 +326,11 @@ class TrainModel_groupId():
                 y_batch = y_batch.to(DEVICE)
                 
                 preds = model(x_batch)
-                loss = criterion(preds.cpu(), y_batch.cpu(), idx, length, train=False)
+                #loss_ = criterion_(preds.cpu(), y_batch.cpu(), index, train=False)
+                loss_g = criterion(preds.cpu(), y_batch.cpu(), idx, length, train=False)
                 
-                avg_val_loss += loss.item() / len(data_loader)
-                del loss; gc.collect()
+                avg_val_loss += loss_g.item() / len(data_loader)
+                del loss_g; gc.collect()
                 
                 
             if best_score>avg_val_loss:
