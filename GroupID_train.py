@@ -1,6 +1,3 @@
-
-
-
 class indicate_index(torch.utils.data.Dataset):
     def __init__(self, index):
         self.index = index
