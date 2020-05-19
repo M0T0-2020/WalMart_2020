@@ -114,7 +114,6 @@ def preprocessing(path, test):
     data.columns=['null_num_600', 'sell_mean']
     data['sell_mean_null_600'] = data['sell_mean']/data['null_num_600']
     ids = data.sort_values('sell_mean_null_600', ascending=False).index.tolist()
-    train_df = train_df[train_df.id.isin(ids[5000:])]
     gc.collect()
     
     
