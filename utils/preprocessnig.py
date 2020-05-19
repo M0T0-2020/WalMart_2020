@@ -99,9 +99,11 @@ def make_shift_data(data):
 
 # 1~1941
 D_COLS = [i+1 for i in range(1941)]
-
-def preprocessing(data, path):
-    train_df = pd.read_csv(path+'train_df.csv')
+def preprocessing(path, test):
+    if test:
+        train_df = pd.read_csv(path+'train_df_short.csv')
+    else:
+        train_df = pd.read_csv(path+'train_df.csv')
     train_df.columns= [int(col) if col.isnumeric() else str(col) for col in train_df.columns]
     
     train_df.index=train_df.id
@@ -217,7 +219,7 @@ def preprocessing(data, path):
 def shift_seven(data):
     data[['shift_1', 'shift_2']] = data.groupby(['id'])[['shift_1', 'shift_2']].shift(7)
     return data
-    
+
 def shift_one(data):
     data[
         ['roll_28_std', 'roll_28_mean', 'diff_std_1', 'diff_mean_1', 'diff_std_7', 'diff_mean_7']
