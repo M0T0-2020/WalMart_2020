@@ -118,7 +118,7 @@ def preprocessing(path, test):
     
     
     data = pd.concat([
-        train_df[train_df.id.isin(ids[5000:])][D_COLS[-60:]].stack(dropna=False).reset_index(),
+        train_df[train_df.id.isin(ids[5000:])][D_COLS[-77:]].stack(dropna=False).reset_index(),
         train_df[train_df.id.isin(ids[:5000])][D_COLS[-370:]].stack(dropna=False).reset_index()
         ], axis=0)
     data = data.rename(columns=set_index(data, 'TARGET'))
