@@ -10,6 +10,7 @@ from sklearn import metrics
 from sklearn import preprocessing
 from sklearn.metrics import classification_report, confusion_matrix, mean_squared_error, log_loss
 from sklearn.linear_model import Ridge,Lasso
+from sklearn.preprocessing import minmax_scale
 
 
 PARAMS = {
@@ -37,8 +38,8 @@ def plot_importance(models, col):
         importances+=model.feature_importance(importance_type='gain')
     importance = pd.DataFrame()
     importance['importance'] = importances
-    importance['importance'] = preprocessing.minmax_scale(importance.importance)
-    importance.index = col
+    importance['importance'] = minmax_scale(importance.importance)
+    importance['col'] = col
     importance.to_csv(f'importance.csv',index=False)
     
 def run_cv(x_train, y_train, trn_df, params=PARAMS):
@@ -73,18 +74,19 @@ def predict_cv(x_val, models):
 
 def show_eval_score(preds, val_df):
     preds = np.e**(preds)-1
-    val_df['y_preds'] = preds
+    val_df['y_pred'] = preds
     score= np.sqrt(mean_squared_error(val_df['TARGET'], preds))
     print("EVALUATION SCORE : ", score)
     return val_df
 
 def split_data(data, trn_day, val_day):
-    data = data[data.TARGET.notnull()]
+    data = data[data.shift_4.notnull()]
+    
     y = data[['d', 'id', 'TARGET']]
     X = data.drop(columns=['id',  'TARGET','state_id']).astype(float)
-
-    x_train, x_val = X[X.d.isin(trn_day)], X[X.d.isin(trn_day)]
-    y_train, y_val = y[y.d.isin(val_day)], y[y.d.isin(val_day)]
+    
+    x_train, x_val = X[X.d.isin(trn_day)], X[X.d.isin(val_day)]
+    y_train, y_val = y[y.d.isin(trn_day)], y[y.d.isin(val_day)]
     
     x_train.reset_index(drop=True,inplace=True)
     x_val.reset_index(drop=True,inplace=True)
@@ -101,6 +103,7 @@ def split_data(data, trn_day, val_day):
 
 def train(data):
     split=28
+    data = data[data.TARGET.notnull()]
     d_cols = sorted(data.d.unique())
     trn_day = d_cols[:-split]
     val_day = d_cols[-split:]
@@ -139,6 +142,8 @@ def run_cv_for_sub(X, y, trn_df, params=PARAMS):
 
 def split_data_for_sub(data):
     data = data[data.TARGET.notnull()]
+    data = data[data.shift_4.notnull()]
+    data = data[data.diff_std_7.notnull()]
     trn_df = data[['id', 'd', 'TARGET']]
     y = np.log1p(data['TARGET']).astype(float)
     X = data.drop(columns=['id','d', 'TARGET','state_id']).astype(float)
@@ -147,7 +152,7 @@ def split_data_for_sub(data):
     trn_df.reset_index(drop=True, inplace=True)
     return X, y, trn_df
 
-def train_sub_presict(data, for_predict):
+def train_sub_predict(data, for_predict):
     train_d_cols = data.d.unique().tolist()
     predict_day=train_d_cols[-28:][for_predict-1]
     sub_predict_data = data[data.d==predict_day]
@@ -156,7 +161,6 @@ def train_sub_presict(data, for_predict):
     models, trn_df = run_cv_for_sub(X, y, trn_df)
     preds = predict_cv(sub_predict_data[X.columns], models)
     
-    sub_df = pd.DataFrame()
-    sub_df[f'F{for_predict}'] = preds
-    sub_df['id']=sub_predict_data.id
+    sub_df = sub_predict_data[['id', 'd', 'TARGET']]
+    sub_df[f'y_pred'] = preds
     return trn_df, sub_df

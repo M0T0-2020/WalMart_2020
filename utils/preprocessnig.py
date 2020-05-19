@@ -86,20 +86,17 @@ def make_diff_data(data, win):
 
 def make_shift_data(data):
     shift=7
-    
-    data[f'shift_1'] = data.groupby(['id'])['TARGET'].apply(
-        lambda x:
-        x.shift(shift)+x.shift(shift+7)
-    )
-    data[f'shift_2'] = data[f'shift_1']+data.groupby(['id'])['TARGET'].apply(
-        lambda x:
-        x.shift(shift+14)+x.shift(shift+28)
-    )
+    for i, p in  enumerate([0,7,14,28]):
+        data[f'shift_{i+1}'] = data.groupby(['id'])['TARGET'].shift(shift+p)
+    data['shift_2'] = data[['shift_1', 'shift_2']].mean(1)
+    data['shift_3'] = data[['shift_2', 'shift_3']].mean(1)
+    data['shift_4'] = data[['shift_3', 'shift_4']].mean(1)
     return data
 
 # 1~1941
 D_COLS = [i+1 for i in range(1941)]
-def preprocessing(path, test):
+
+def preprocessing(path,d_cols,test):
     if test:
         train_df = pd.read_csv(path+'train_df_short.csv')
     else:
@@ -108,18 +105,19 @@ def preprocessing(path, test):
     
     train_df.index=train_df.id
     data = pd.concat([
-        train_df[D_COLS[-600:]].isnull().sum(axis=1),
-        train_df[D_COLS].mean(1)
+        train_df[d_cols].isnull().sum(axis=1),
+        train_df[d_cols].mean(1)
     ],axis=1)
     data.columns=['null_num_600', 'sell_mean']
+    data['null_num_600'] = data['null_num_600'].apply(lambda x: 1e-9 if x<=0 else x)
     data['sell_mean_null_600'] = data['sell_mean']/data['null_num_600']
     ids = data.sort_values('sell_mean_null_600', ascending=False).index.tolist()
     gc.collect()
     
     
     data = pd.concat([
-        train_df[train_df.id.isin(ids[5000:])][D_COLS[-77:]].stack(dropna=False).reset_index(),
-        train_df[train_df.id.isin(ids[:5000])][D_COLS[-370:]].stack(dropna=False).reset_index()
+        train_df[train_df.id.isin(ids[5000:])][d_cols].stack(dropna=False).reset_index(),
+        train_df[train_df.id.isin(ids[:5000])][d_cols[-77:]].stack(dropna=False).reset_index()
         ], axis=0)
     data = data.rename(columns=set_index(data, 'TARGET'))
     data.sort_values('d', inplace=True)
@@ -138,9 +136,9 @@ def preprocessing(path, test):
     data[f'snap']=0
     for key, value in snap_data.to_dict().items():
         k = key.replace('snap_', '')
-        data.loc[data.state_id==k,'snap'] = data.loc[data.state_id==k, 'd'].map(value)
+        data.loc[data.state_id==k,'snap'] = data.loc[data.state_id==k, 'd'].map(value).fillna(0)
     for shift in [-3,-2,-1,1,2,3]:
-        data[f'snap_{shift}'] = data.groupby(['id'])['snap'].shift(shift)
+        data[f'snap_{shift}'] = data.groupby(['id'])['snap'].shift(shift).fillna(0)
 
 
     dept_id_price = pd.read_csv(path+'dept_id_price.csv')
@@ -190,16 +188,15 @@ def preprocessing(path, test):
 
     tmp_dic = event_df.to_dict()
     data[f'dept_id_event_name_1']=1
-    data[f'dept_id_event_name_2']=1
     data[f'cat_id_event_name_1']=1
-    data[f'cat_id_event_name_2']=1
     for key, value in tmp_dic.items():
-        if key[13:] in train_df.dept_id.unique().tolist():
-            data.loc[data.dept_id==key, f'dept_id_{key[:12]}']=data.loc[data.dept_id==key, 'd'].map(value).fillna(1)
-        if key[13:] in train_df.cat_id.unique().tolist():
-            data.loc[data.cat_id==key, f'cat_id_{key[:12]}']=data.loc[data.cat_id==key, 'd'].map(value).fillna(1)
+        if key in 'event_name_1':
+            if key[13:] in train_df.dept_id.unique().tolist():
+                data.loc[data.dept_id==key[13:], f'dept_id_{key[:12]}']=data.loc[data.dept_id==key[13:], 'd'].map(value).fillna(1)
+            if key[13:] in train_df.cat_id.unique().tolist():
+                data.loc[data.cat_id==key[13:], f'cat_id_{key[:12]}']=data.loc[data.cat_id==key[13:], 'd'].map(value).fillna(1)
     for shift in [-7,-4,-3,-2,-1,1,2]:
-        for event_name in ['dept_id_event_name_1', 'dept_id_event_name_2', 'cat_id_event_name_1', 'cat_id_event_name_2']:
+        for event_name in ['dept_id_event_name_1', 'cat_id_event_name_1']:
             data[f'{event_name}_shift{shift}'] = data.groupby(['id'])[event_name].shift(shift).fillna(1)
 
     cols = data.columns.tolist()
@@ -213,16 +210,20 @@ def preprocessing(path, test):
 
     print([col for col in data.columns if not col in cols])
     
+    categories = [c for c in data.columns if data[c].dtype==object]
+    for c in categories:
+        if c=='id':
+            pass
+        else:
+            data[c] = pd.factorize(data[c])[0]
     return data
 
-def shift_seven(data):
-    data[['shift_1', 'shift_2']] = data.groupby(['id'])[['shift_1', 'shift_2']].shift(7)
+def shift_seven(data, cols):
+    #['shift_1', 'shift_2', 'shift_3', 'shift_4']
+    data[cols] = data.groupby(['id'])[cols].shift(7)
     return data
-
-def shift_one(data):
-    data[
-        ['roll_28_std', 'roll_28_mean', 'diff_std_1', 'diff_mean_1', 'diff_std_7', 'diff_mean_7']
-        ]=data.groupby(['id'])[
-            ['roll_28_std', 'roll_28_mean', 'diff_std_1', 'diff_mean_1', 'diff_std_7', 'diff_mean_7']
-            ].shift(1)
+    
+def shift_one(data,cols):
+    #['roll_28_std', 'roll_28_mean', 'diff_std_1', 'diff_mean_1', 'diff_std_7', 'diff_mean_7']
+    data[cols]=data.groupby(['id'])[cols].shift(1)
     return data

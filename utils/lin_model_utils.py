@@ -13,7 +13,7 @@ from sklearn.metrics import classification_report, confusion_matrix, mean_square
 from sklearn.linear_model import Ridge,Lasso
 
 def to_onehot_data(data):
-    data.drop(columns=['item_id','state_id'], inplace=True)
+    data = data.drop(columns=['state_id'])
     category = ['cat_id', 'dept_id', 'store_id', 'month', 'wday']
     for cat in category:
         if cat!='dept_id':
@@ -30,9 +30,7 @@ def to_onehot_data(data):
 
 def data_split_lin(data, trn_days, val_days):
     data.dropna(0, inplace=True)
-    ids = data[data.d==trn_days[0]].id.unique().tolist()
     train = data[data.d.isin(trn_days)]
-    train = train[train.id.isin(ids)]
     val = data[data.d.isin(val_days)]
     train.reset_index(drop=True, inplace=True)
     val.reset_index(drop=True, inplace=True)
@@ -79,14 +77,16 @@ def linear_predict(models, X, val_df):
 def train_lin(data, trn_days, val_days):
     data = to_onehot_data(data)
     train, val, trn_df, val_df = data_split_lin(data, trn_days, val_days)
+    print(train.shape, val.shape)
     models, trn_df = linear_cv(train, trn_df)
     val_df = linear_predict(models, val, val_df)
     return val_df, trn_df
 
 def train_lin_sub(data, for_predict):
     predict_day = data.d.unique()[-28:][for_predict-1]
-    predict_sub_df = data[data.d==predict_day]
     data = to_onehot_data(data)
+    predict_sub_df = data[data.d==predict_day]
+    
     data.dropna(0, inplace=True)
     data.reset_index(drop=True, inplace=True)
     predict_sub_df.reset_index(drop=True, inplace=True)
