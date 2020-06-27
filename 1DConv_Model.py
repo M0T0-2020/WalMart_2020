@@ -10,50 +10,21 @@ class Mish(nn.Module):
 
     def forward(self, input):
         return mish(input)
-    
-class residual_conv1d(nn.Module):
 
-    def __init__(self, in_channel):
-        super(residual_conv1d, self).__init__()
-        
-        self.mish = Mish()
-        self.layer = nn.Sequential(
-            nn.Conv1d(in_channel, in_channel, 1),
-            Mish(),
-            nn.Conv1d(in_channel, in_channel, 1)
-        )
-
-    def forward(self, x):
-        x = x+self.layer(x)
-        x = self.mish(x)
-        return x
-
-class Conv_1d_Net(nn.Module):
+class MyNet(nn.Module):
 
     def __init__(self, in_channel):
         super(Conv_1d_Net, self).__init__()
         
-        self.layer_1 = nn.Sequential(
-            nn.Conv1d(in_channel, 2*in_channel, 1),
-            nn.Dropout(0.2),
+        self.conv1d_layer = nn.Sequential(
+            nn.Conv1d(1, 4, 2),
             Mish(),
-            residual_conv1d(2*in_channel)
-        )
-        
-        self.layer_2 = nn.Sequential(
-            nn.Conv1d(2*in_channel, 4*in_channel, 1),
-            nn.Dropout(0.2),
+            nn.Conv1d(4, 8, 4),
             Mish(),
-            residual_conv1d(4*in_channel)
-        )
-        
-        self.layer_3 = nn.Sequential(
-            nn.Conv1d(4*in_channel, 8*in_channel, 1),
-            nn.Dropout(0.2),
+            nn.Conv1d(16, 32, 8),
             Mish(),
-            residual_conv1d(8*in_channel)
+            nn.Conv1d(32, 64, 16)
         )
-       
          
         self.avgpool1d = nn.AdaptiveAvgPool1d(1)
         
@@ -67,16 +38,13 @@ class Conv_1d_Net(nn.Module):
             nn.Linear(16*in_channel, 28)
         ) 
 
-    def forward(self, x):
+    def forward(self, sale_data, event_data, day_data):
         #_in = x.size()[1]
-        x = self.layer_1(x)
-        x = self.layer_2(x)
-        x = self.layer_3(x)
-        #x = self.layer_4(x)
-        x = self.avgpool1d(x)
-        x = torch.flatten(x, 1)
+        sale_data = self.conv1d_layer(sale_data)
+        sale_data = self.avgpool1d(sale_data)
+        sale_data = torch.flatten(sale_data, 1)
+        x = torch.cat((sale_data, event_data, day_data),dim=1)
         x = self.fc(x)
-
         return x
     
     
